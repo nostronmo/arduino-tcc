@@ -1,0 +1,22 @@
+[tools]
+bun = "latest"
+node = "22"
+
+[env]
+_.file = ".env"
+
+[tasks.backend_install]
+description = "Iniciar Backend do projeto"
+run = "bun install"
+
+[tasks.backend_run]
+description = "Iniciar Backend do projeto"
+run = "PORT={{arg(i=0, default=\"8000\")}} bun nest start"
+
+[tasks.prisma_start]
+description = "Iniciar Schema no Banco de Dados"
+run = "bunx prisma db push"
+
+[tasks.prisma_seed]
+description = "Iniciar Seed no Banco de Dados"
+run = "bunx prisma db seed"

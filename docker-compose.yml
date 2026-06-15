@@ -1,0 +1,49 @@
+services:
+  emqx:
+    image: emqx:5.3
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "9002:1883"
+      - "9003:8083"
+      - "18083:18083"
+    environment:
+      EMQX_ALLOW_ANONYMOUS: "false"
+      EMQX_AUTH__MZ__AUTHN__MECHANISM: password_based
+      EMQX_AUTH__MZ__AUTHN__CONFIG__PASSWORD_HASH: plain
+      EMQX_AUTH__MZ__AUTHN__CONFIG__USER__1__USERNAME: ${MQTT_USERNAME}
+      EMQX_AUTH__MZ__AUTHN__CONFIG__USER__1__PASSWORD: ${MQTT_PASSWORD}
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${MQTT_DASHBOARD_USERNAME}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${MQTT_DASHBOARD_PASSWORD}
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+
+  car_simulator:
+    build:
+      context: ./arduino/cam-sim
+      dockerfile: Dockerfile
+    container_name: car_simulator
+    environment:
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    depends_on:
+      - emqx
+
+  postgres:
+    image: postgres:16
+    container_name: postgres_tcc
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data_tcc:/var/lib/postgresql/data
+
+volumes:
+  postgres_data_tcc:

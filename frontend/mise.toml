@@ -1,0 +1,18 @@
+[tools]
+bun = "latest"
+node = "22"
+
+[env]
+_.file = ".env"
+
+[tasks.frontend_install]
+description = "Iniciar Frontend do projeto"
+run = "bun install"
+
+[tasks.frontend_build]
+description = "Buildar Frontend do projeto"
+run = "bun next build"
+
+[tasks.frontend_run]
+description = "Iniciar Frontend do projeto"
+run = "bun next start"

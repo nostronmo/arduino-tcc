@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StatusSincronizacao {
+  SINCRONIZADO
+  NAO_SINCRONIZADO
+}
+
+enum SeveridadeEvento {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+enum TipoEvento {
+  FRENAGEM_BRUSCA
+  ACELERACAO_BRUSCA
+  EXCESSO_VELOCIDADE
+  PARADA_PROLONGADA
+}
+
+model Usuario {
+  id        String    @id @default(uuid())
+  nome      String
+  email     String    @unique
+  senhaHash String
+  veiculos  Veiculo[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("usuarios")
+}
+
+model Veiculo {
+  id           String                @id @default(uuid())
+  usuarioId    String
+  usuario      Usuario               @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  placa        String                @unique
+  chassi       String?               @unique
+  modelo       String
+  marca        String
+  ano          Int
+  dispositivo  Dispositivo?
+  telemetrias  RegistroTelemetria[]
+  eventos      EventoVeicular[]
+  configuracao ConfiguracaoVeiculo?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([usuarioId])
+  @@map("veiculos")
+}
+
+model Dispositivo {
+  id                    String                 @id @default(uuid())
+  veiculoId             String                 @unique
+  veiculo               Veiculo                @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  codigoDispositivo     String                 @unique
+  statusSincronizacao   StatusSincronizacao    @default(NAO_SINCRONIZADO)
+  ultimaSincronizacao   DateTime?
+  registrosTelemetria   RegistroTelemetria[]
+  eventos               EventoVeicular[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@map("dispositivos")
+}
+
+model RegistroTelemetria {
+  id                 String           @id @default(uuid())
+  pacoteId           String?          @unique
+  dispositivoId      String
+  dispositivo        Dispositivo      @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+  veiculoId          String
+  veiculo            Veiculo          @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  timestamp          DateTime
+  velocidadeObd      Float?
+  rpm                Int?
+  temperaturaMotor   Float?
+  eventos            EventoVeicular[]
+  createdAt          DateTime         @default(now())
+
+  @@index([veiculoId, timestamp])
+  @@index([dispositivoId, timestamp])
+  @@map("registros_telemetria")
+}
+
+model EventoVeicular {
+  id                    String              @id @default(uuid())
+  veiculoId             String
+  veiculo               Veiculo             @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  dispositivoId         String
+  dispositivo           Dispositivo         @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+  registroTelemetriaId  String
+  registroTelemetria    RegistroTelemetria  @relation(fields: [registroTelemetriaId], references: [id], onDelete: Cascade)
+  tipo                  TipoEvento
+  descricao             String
+  severidade            SeveridadeEvento
+  timestamp             DateTime
+  createdAt             DateTime            @default(now())
+
+  @@index([veiculoId, timestamp])
+  @@index([tipo])
+  @@map("eventos_veiculares")
+}
+
+model ConfiguracaoVeiculo {
+  id                         String   @id @default(uuid())
+  veiculoId                  String   @unique
+  veiculo                    Veiculo  @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  limiteVelocidade           Float    @default(80)
+  tempoParadaLongaMinutos    Int      @default(10)
+  limiteFrenagemBrusca       Float    @default(20)
+  limiteAceleracaoBrusca     Float    @default(25)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@map("configuracoes_veiculo")
+}

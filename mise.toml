@@ -1,0 +1,18 @@
+[env]
+_.file = ".env"
+
+[tasks.docker_run]
+description = "Iniciar Project docker compose completo"
+run = "docker compose up -d --build"
+
+[tasks.docker_stop]
+description = "Parar projeto docker compose"
+run = "docker compose down"
+
+[tasks.docker_emqx]
+description = "Iniciar Broker Mqtt emqx no docker"
+run = "docker compose up -d emqx"
+
+[tasks.docker_sim]
+description = "Iniciar Broker Mqtt emqx no docker"
+run = "docker compose up -d car_simulator"
