@@ -1,7 +1,15 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { SeveridadeEvento, StatusSincronizacao, TipoEvento } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateRegistroTelemetriaDto } from './dto/create-registro-telemetria.dto';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  SeveridadeEvento,
+  StatusSincronizacao,
+  TipoEvento,
+} from "@prisma/client";
+import { PrismaService } from "../prisma/prisma.service";
+import { CreateRegistroTelemetriaDto } from "./dto/create-registro-telemetria.dto";
 
 type EventoDerivado = {
   tipo: TipoEvento;
@@ -15,10 +23,12 @@ export class TelemetriaService {
 
   async create(dto: CreateRegistroTelemetriaDto) {
     if (dto.pacoteId) {
-      const registroExistente = await this.prisma.registroTelemetria.findUnique({
-        where: { pacoteId: dto.pacoteId },
-        include: { eventos: true },
-      });
+      const registroExistente = await this.prisma.registroTelemetria.findUnique(
+        {
+          where: { pacoteId: dto.pacoteId },
+          include: { eventos: true },
+        },
+      );
 
       if (registroExistente) {
         const configuracaoAplicada = await this.obterConfiguracaoDoVeiculo(
@@ -48,7 +58,7 @@ export class TelemetriaService {
     });
 
     if (!dispositivo) {
-      throw new NotFoundException('Codigo do dispositivo nao encontrado.');
+      throw new NotFoundException("Codigo do dispositivo nao encontrado.");
     }
 
     const timestamp = new Date(dto.timestamp);
@@ -93,7 +103,7 @@ export class TelemetriaService {
     return this.prisma.registroTelemetria.findMany({
       where: { veiculoId },
       include: { eventos: true },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { timestamp: "desc" },
     });
   }
 
@@ -102,15 +112,18 @@ export class TelemetriaService {
       where: { id: dispositivoId },
       include: { veiculo: true },
     });
-    if (!dispositivo) throw new NotFoundException('Dispositivo nao encontrado.');
+    if (!dispositivo)
+      throw new NotFoundException("Dispositivo nao encontrado.");
     if (dispositivo.veiculo.usuarioId !== usuarioId) {
-      throw new ForbiddenException('Dispositivo nao pertence ao usuario autenticado.');
+      throw new ForbiddenException(
+        "Dispositivo nao pertence ao usuario autenticado.",
+      );
     }
 
     return this.prisma.registroTelemetria.findMany({
       where: { dispositivoId },
       include: { eventos: true },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { timestamp: "desc" },
     });
   }
 
@@ -119,7 +132,10 @@ export class TelemetriaService {
     const eventosParaCriar: EventoDerivado[] = [];
     const velocidadeAtual = this.obterVelocidade(registro);
 
-    if (velocidadeAtual !== null && velocidadeAtual > configuracao.limiteVelocidade) {
+    if (
+      velocidadeAtual !== null &&
+      velocidadeAtual > configuracao.limiteVelocidade
+    ) {
       eventosParaCriar.push({
         tipo: TipoEvento.EXCESSO_VELOCIDADE,
         descricao: `Velocidade registrada de ${velocidadeAtual} km/h acima do limite de ${configuracao.limiteVelocidade} km/h.`,
@@ -133,13 +149,14 @@ export class TelemetriaService {
         timestamp: { lt: registro.timestamp },
         id: { not: registro.id },
       },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { timestamp: "desc" },
     });
 
     if (registroAnterior && velocidadeAtual !== null) {
       const velocidadeAnterior = this.obterVelocidade(registroAnterior);
       const diferencaSegundos =
-        (registro.timestamp.getTime() - registroAnterior.timestamp.getTime()) / 1000;
+        (registro.timestamp.getTime() - registroAnterior.timestamp.getTime()) /
+        1000;
 
       if (velocidadeAnterior !== null && diferencaSegundos > 0) {
         const variacao = velocidadeAtual - velocidadeAnterior;
@@ -194,7 +211,7 @@ export class TelemetriaService {
 
     return this.prisma.eventoVeicular.findMany({
       where: { registroTelemetriaId: registro.id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
     });
   }
 
@@ -208,7 +225,7 @@ export class TelemetriaService {
         timestamp: { lt: registro.timestamp },
         velocidadeObd: { gt: 0 },
       },
-      orderBy: { timestamp: 'desc' },
+      orderBy: { timestamp: "desc" },
     });
 
     const inicioParada = await this.prisma.registroTelemetria.findFirst({
@@ -219,7 +236,7 @@ export class TelemetriaService {
           : { lte: registro.timestamp },
         velocidadeObd: 0,
       },
-      orderBy: { timestamp: 'asc' },
+      orderBy: { timestamp: "asc" },
     });
 
     if (!inicioParada) return null;
@@ -256,10 +273,14 @@ export class TelemetriaService {
   }
 
   private async validarVeiculoDoUsuario(usuarioId: string, veiculoId: string) {
-    const veiculo = await this.prisma.veiculo.findUnique({ where: { id: veiculoId } });
-    if (!veiculo) throw new NotFoundException('Veiculo nao encontrado.');
+    const veiculo = await this.prisma.veiculo.findUnique({
+      where: { id: veiculoId },
+    });
+    if (!veiculo) throw new NotFoundException("Veiculo nao encontrado.");
     if (veiculo.usuarioId !== usuarioId) {
-      throw new ForbiddenException('Veiculo nao pertence ao usuario autenticado.');
+      throw new ForbiddenException(
+        "Veiculo nao pertence ao usuario autenticado.",
+      );
     }
   }
 }

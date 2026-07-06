@@ -9,23 +9,25 @@
 #define RXD2 4
 #define TXD2 5
 
-const int red_led_pin = 14;
-const int blue_led_pin = 12;
+const int red_led_pin = 12;
+const int blue_led_pin = 14;
 const int sd_card_pin = 15;
 const int button_pin = 13;
 
-const char *WIFI_SSID = "NONE";
-const char *WIFI_PASSWORD = "NONE";
-
-const char *MQTT_BROKER = "NONE";
-const int MQTT_PORT = 9002;
+// Get All the important variables via SD CARD
 
 const char *DEVICE_NAME = "ESP_READER";
 
-const char *MQTT_OUTPUT_TOPIC = "telemetria/veicular";
+const char *WIFI_SSID = "JS-wireless 2G";
+const char *WIFI_PASSWORD = "Poli2023!@";
+
+const char *MQTT_BROKER = "192.168.10.144";
+const int MQTT_PORT = 9002;
 
 const char *ADMIN_USER = "admin";
 const char *ADMIN_PASSWORD = "admin";
+
+const char *MQTT_OUTPUT_TOPIC = "telemetria/veicular";
 
 bool wifiEnabled = true;
 int lastButtonState = HIGH;
@@ -448,7 +450,7 @@ void setup() {
   Serial.println("System Initialized");
   pinMode(red_led_pin, OUTPUT);
   pinMode(blue_led_pin, OUTPUT);
-  pinMode(button_pin, INPUT_PULLUP);
+  pinMode(button_pin, INPUT);
 
   digitalWrite(red_led_pin, LOW);
   digitalWrite(blue_led_pin, LOW);

@@ -6,14 +6,15 @@
 #include <WiFi.h>
 #include <time.h>
 
-const int led_pin = 14;
+const int red_led_pin = 12;
+const int blue_led_pin = 14;
 const int sd_card_pin = 15;
-const int button_pin = 21;
+const int button_pin = 13;
 
-const char *WIFI_SSID = "NONE";
-const char *WIFI_PASSWORD = "NONE";
+const char *WIFI_SSID = "WIFI_SSID";
+const char *WIFI_PASSWORD = "WIFI_PASSWORD";
 
-const char *MQTT_BROKER = "NONE";
+const char *MQTT_BROKER = "MQTT_BROKER";
 const int MQTT_PORT = 9002;
 
 const char *DEVICE_NAME = "ESP32-TCC-001";
@@ -27,9 +28,11 @@ const char *ADMIN_PASSWORD = "admin";
 bool wifiEnabled = true;
 int lastButtonState = HIGH;
 bool timeConfigured = false;
+bool backlogCleared = false;
 
 unsigned long lastReconnectAttempt = 0;
 unsigned long lastDataSendTime = 0;
+unsigned long lastObdReadTime = 0;
 
 const long gmtOffset_sec = -10800;
 const int daylightOffset_sec = 0;
@@ -80,23 +83,48 @@ void savePointer(unsigned long pos) {
   }
 }
 
+int getBacklogCount() {
+  String filename = getFileName();
+  if (!SD.exists(filename)) {
+    return 0;
+  }
+  File dataFile = SD.open(filename, FILE_READ);
+  if (!dataFile) {
+    return 0;
+  }
+
+  unsigned long startPos = getSavedPointer();
+  if (startPos > 0) {
+    dataFile.seek(startPos);
+  }
+
+  int recordCount = 0;
+  while (dataFile.available()) {
+    if (dataFile.read() == '\n')
+      recordCount++;
+  }
+  dataFile.close();
+  return recordCount;
+}
+
 bool sendMqtt(const String &topic, const String &payload, int maxRetries = 3) {
   if (!mqttClient.connected())
     return false;
 
-  digitalWrite(led_pin, HIGH);
+  digitalWrite(red_led_pin, HIGH);
   for (int i = 1; i <= maxRetries; i++) {
     if (mqttClient.publish(topic.c_str(), payload.c_str())) {
-      digitalWrite(led_pin, LOW);
+      digitalWrite(red_led_pin, LOW);
       return true;
     }
     delay(100);
   }
-  digitalWrite(led_pin, LOW);
+  digitalWrite(red_led_pin, LOW);
   return false;
 }
 
 void logToSD(String currentTimestamp, int v, int r, int t) {
+  digitalWrite(blue_led_pin, HIGH);
   String filename = getFileName();
   File dataFile = SD.open(filename, FILE_APPEND);
 
@@ -107,9 +135,10 @@ void logToSD(String currentTimestamp, int v, int r, int t) {
   } else {
     Serial.println("[ERROR] Failed to open file for appending");
   }
+  digitalWrite(blue_led_pin, LOW);
 }
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
   if (strcmp(topic, MQTT_INPUT_TOPIC) == 0) {
     String message;
     for (int i = 0; i < length; i++) {
@@ -120,9 +149,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     DeserializationError error = deserializeJson(doc, message);
 
     if (!error) {
-      if (doc.containsKey("velocidadeObd")) latest_velocity = doc["velocidadeObd"];
-      if (doc.containsKey("rpm")) latest_rpm = doc["rpm"];
-      if (doc.containsKey("temperaturaMotor")) latest_temp = doc["temperaturaMotor"];
+      if (doc.containsKey("velocidadeObd"))
+        latest_velocity = doc["velocidadeObd"];
+      if (doc.containsKey("rpm"))
+        latest_rpm = doc["rpm"];
+      if (doc.containsKey("temperaturaMotor"))
+        latest_temp = doc["temperaturaMotor"];
 
     } else {
       Serial.println("[MQTT ERROR] Failed to parse incoming OBD JSON");
@@ -238,9 +270,9 @@ bool processBacklog() {
       savePointer(0);
 
       for (int i = 0; i < 5; i++) {
-        digitalWrite(led_pin, HIGH);
+        digitalWrite(blue_led_pin, HIGH);
         delay(100);
-        digitalWrite(led_pin, LOW);
+        digitalWrite(blue_led_pin, LOW);
         delay(100);
       }
       return true;
@@ -254,62 +286,8 @@ bool processBacklog() {
   return false;
 }
 
-int getBacklogCount() {
-  String filename = getFileName();
-
-  if (!SD.exists(filename)) {
-    return 0;
-  }
-
-  File dataFile = SD.open(filename, FILE_READ);
-  if (!dataFile) {
-    return 0;
-  }
-
-  unsigned long startPos = getSavedPointer();
-  if (startPos > 0) {
-    dataFile.seek(startPos);
-  }
-
-  int recordCount = 0;
-  while (dataFile.available()) {
-    if (dataFile.read() == '\n') {
-      recordCount++;
-    }
-  }
-
-  dataFile.close();
-  return recordCount;
-}
-
-void setup() {
-  Serial.begin(115200);
-  Serial.println("System Initialized");
-  pinMode(led_pin, OUTPUT);
-  pinMode(button_pin, INPUT_PULLUP);
-
-  digitalWrite(led_pin, LOW);
-
-  Serial.print("Initializing SD card...");
-  if (!SD.begin(sd_card_pin)) {
-    Serial.println(" Card Mount Failed!");
-  } else {
-    Serial.println(" SD Card initialized.");
-  }
-
-  WiFi.mode(WIFI_STA);
-
-  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-  mqttClient.setBufferSize(1024);
-  mqttClient.setCallback(mqttCallback);
-  lastButtonState = digitalRead(button_pin);
-}
-
-void loop() {
-  static bool backlogCleared = false;
-
+void handleButton() {
   int currentButtonState = digitalRead(button_pin);
-
   if (currentButtonState != lastButtonState) {
     delay(50);
     currentButtonState = digitalRead(button_pin);
@@ -331,52 +309,63 @@ void loop() {
       timeConfigured = false;
     }
   }
-
   lastButtonState = currentButtonState;
+}
 
-  if (wifiEnabled) {
-    if (WiFi.status() != WL_CONNECTED) {
+void handleNetwork() {
+  if (!wifiEnabled) {
+    return;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    if (millis() - lastReconnectAttempt > 5000) {
+      Serial.print("[WIFI] Connecting...");
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      lastReconnectAttempt = millis();
+      digitalWrite(blue_led_pin, LOW);
+    }
+  } else {
+    digitalWrite(blue_led_pin, HIGH);
+    if (!timeConfigured) {
+      configTime(gmtOffset_sec, daylightOffset_sec, "pool.ntp.org");
+      timeConfigured = true;
+    }
+
+    if (!mqttClient.connected()) {
       if (millis() - lastReconnectAttempt > 5000) {
-        Serial.print("[WIFI] Connecting...");
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        Serial.print("[MQTT] Connecting...");
+        String clientId = String(DEVICE_NAME) + "-" +
+                          String((uint32_t)ESP.getEfuseMac(), HEX);
+
+        if (mqttClient.connect(clientId.c_str(), ADMIN_USER, ADMIN_PASSWORD)) {
+          Serial.println(" Connected!");
+          mqttClient.subscribe(MQTT_INPUT_TOPIC);
+          Serial.println("[MQTT] Subscribed to topic: " + String(MQTT_INPUT_TOPIC));
+          processBacklog();
+          backlogCleared = true;
+        } else {
+          Serial.println(" Failed.");
+        }
         lastReconnectAttempt = millis();
       }
     } else {
-      if (!timeConfigured) {
-        configTime(gmtOffset_sec, daylightOffset_sec, "pool.ntp.org");
-        timeConfigured = true;
-      }
-
-      if (!mqttClient.connected()) {
-        if (millis() - lastReconnectAttempt > 5000) {
-          Serial.print("[MQTT] Connecting...");
-          String clientId = String(DEVICE_NAME) + "-" +
-                            String((uint32_t)ESP.getEfuseMac(), HEX);
-
-          if (mqttClient.connect(clientId.c_str(), ADMIN_USER,
-                                 ADMIN_PASSWORD)) {
-            Serial.println(" Connected!");
-            mqttClient.subscribe(MQTT_INPUT_TOPIC);
-            processBacklog();
-            backlogCleared = true;
-          } else {
-            Serial.println(" Failed.");
-          }
-          lastReconnectAttempt = millis();
-        }
-      } else {
-        mqttClient.loop();
-      }
+      mqttClient.loop();
     }
   }
+}
 
+void updateLEDs() {
+  if (wifiEnabled && WiFi.status() == WL_CONNECTED && mqttClient.connected()) {
+    digitalWrite(red_led_pin, HIGH);
+  } else {
+    digitalWrite(red_led_pin, LOW);
+  }
+}
+
+void handleTelemetry() {
   if (millis() - lastDataSendTime >= 250) {
     lastDataSendTime = millis();
     String currentTimestamp = getTimestamp();
-
-    int velocity = latest_velocity;
-    int rpm = latest_rpm;
-    int temp = latest_temp;
 
     if (wifiEnabled && mqttClient.connected()) {
       if (!backlogCleared) {
@@ -387,9 +376,9 @@ void loop() {
       doc["pacoteId"] = String(DEVICE_NAME) + "-" + String(millis());
       doc["codigoDispositivo"] = DEVICE_NAME;
       doc["timestamp"] = currentTimestamp;
-      doc["velocidadeObd"] = velocity;
-      doc["rpm"] = rpm;
-      doc["temperaturaMotor"] = temp;
+      doc["velocidadeObd"] = latest_velocity;
+      doc["rpm"] = latest_rpm;
+      doc["temperaturaMotor"] = latest_temp;
       doc["is_backup"] = false;
 
       String jsonString;
@@ -400,9 +389,45 @@ void loop() {
       } else {
         Serial.println("[MQTT ERROR] Failed to send live data!");
       }
-
     } else {
-      logToSD(currentTimestamp, velocity, rpm, temp);
+      logToSD(currentTimestamp, latest_velocity, latest_rpm, latest_temp);
     }
   }
+}
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("System Initialized");
+  pinMode(red_led_pin, OUTPUT);
+  pinMode(blue_led_pin, OUTPUT);
+  pinMode(button_pin, INPUT);
+
+  digitalWrite(red_led_pin, LOW);
+  digitalWrite(blue_led_pin, LOW);
+
+  Serial.print("Initializing SD card...");
+  if (!SD.begin(sd_card_pin)) {
+    Serial.println(" Card Mount Failed!");
+  } else {
+    Serial.println(" SD Card initialized.");
+  }
+
+  WiFi.mode(WIFI_STA);
+
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setBufferSize(1024);
+  mqttClient.setCallback(mqttCallback);
+  lastButtonState = digitalRead(button_pin);
+}
+
+void loop() {
+  handleButton();
+  handleNetwork();
+  updateLEDs();
+
+  if (millis() - lastObdReadTime >= 100) {
+    lastObdReadTime = millis();
+  }
+
+  handleTelemetry();
 }
